@@ -1,0 +1,38 @@
+inference_pipeline:
+  inference_dir: "/home/abb/anomaly-predictor/data/processed"
+  prediction_dir: "/home/abb/anomaly-predictor/data/predictions"
+  model_name: "LSTMAE"
+  model_path: "/home/abb/anomaly-predictor/models/20220315_170158/LSTMAE.pt"
+  scaler_path: "/home/abb/anomaly-predictor/models/20220315_170158/RobustScaler.joblib"
+
+data_loader:
+  init:
+    window_size: 336
+    shifted_period: 0
+    batch_size: 336
+    pin_memory: True
+    num_workers: 3
+    statistical_window: 0
+    scaler_dir: "/home/abb/anomaly-predictor/models/inference/scalers"
+  feature_to_standardize: [
+    "Output Power",
+    "Overall Vibration",
+    "Peak to Peak (X)",
+    "Peak to Peak (Y)",
+    "Peak to Peak (Z)",
+    "Skin Temperature",
+    "Speed",
+    "Motor Supply Frequency",
+    "Vibration (Axial)",
+    "Vibration (Radial)",
+    "Vibration (Tangential)",
+    "Acceleration RMS (Axial)",
+    "Acceleration RMS (Radial)",
+    "Acceleration RMS (Tangential)",
+    "Bearing Condition"
+  ]
+  curve_shift_period: 0
+
+post_process:
+  window_size: 3
+  binarizing_threshold: 0.5

@@ -1,0 +1,104 @@
+artifacts:
+  model_dir: "/polyaxon-v1-data/workspaces/jaime/models/detection/20220609_022812"
+  model_name: "LSTMAE"        # a .pt extension will be appended in the pipeline
+  encoder_name: "encoder"     # a .joblib extension will be appended in the pipeline
+  scaler_name: "RobustScaler" # a .joblib extension will be appended in the pipeline
+
+data_prep:
+  pipeline:
+    input_dir: "/polyaxon-v1-data/inference/input"
+    interim_dir: "/polyaxon-v1-data/inference/interim"
+    processed_dir: "/polyaxon-v1-data/inference/processed"
+
+  ingest_data:
+    assets_dir: "assets"
+    annotation_list: []
+    time_col: "MEASUREMENT_TAKEN_ON(UTC)"
+    cut_off_date: "01-7-21"
+    asset_timezone: 0
+    annotation_timezone: 0
+
+  clean_data:
+    features_to_standardize: [
+        "Output Power",
+        "Overall Vibration",
+        "Peak to Peak (X)",
+        "Peak to Peak (Y)",
+        "Peak to Peak (Z)",
+        "Skin Temperature",
+        "Speed",
+        "Motor Supply Frequency",
+        "Vibration (Axial)",
+        "Vibration (Radial)",
+        "Vibration (Tangential)",
+        "Acceleration RMS (Axial)",
+        "Acceleration RMS (Radial)",
+        "Acceleration RMS (Tangential)",
+        "Bearing Condition"
+    ]
+    standardization_method: "RobustScaler"
+    outlier_threshold: 99999
+    outlier_window: 5
+    nan_range_threshold: 48
+    impute_nan_window: 48
+    impute_nan_period: 1
+    impute_nan_center: True
+    bearing_cond_fill: -1
+    convert_to_int: ["Bearing Condition"]
+    scaler_args:
+      with_centering: True,
+      with_scaling: True,
+      copy: True,
+      quantile_range: [25.0, 75.0]
+      unit_variance: False,
+
+  feature_engineering:
+    min_data_points: 24
+    motor_supply_freq: "Motor Supply Frequency"
+
+
+modeling:
+  inference_pipeline:
+    inference_dir: "/polyaxon-v1-data/inference/processed/20220525_030422"
+    prediction_dir: "/polyaxon-v1-data/inference/predictions"
+    create_visualizations: False
+
+  data_loader:
+    init:
+      lookback_period: 336
+      lookahead_period: 0
+      batch_size: 336
+      pin_memory: True
+      num_workers: 3
+      statistical_window: 0
+    feature_to_standardize: [
+      "Output Power",
+      "Overall Vibration",
+      "Peak to Peak (X)",
+      "Peak to Peak (Y)",
+      "Peak to Peak (Z)",
+      "Skin Temperature",
+      "Speed",
+      "Motor Supply Frequency",
+      "Vibration (Axial)",
+      "Vibration (Radial)",
+      "Vibration (Tangential)",
+      "Acceleration RMS (Axial)",
+      "Acceleration RMS (Radial)",
+      "Acceleration RMS (Tangential)",
+      "Bearing Condition"
+    ]
+
+  visualizations:
+    time_col: "PREDICTED_ANOMALY_TIME(UTC)"
+    plotting_features: ["Motor Supply Frequency",
+      "Vibration (Axial)",
+      "Vibration (Radial)",
+      "Vibration (Tangential)",
+      "Acceleration RMS (Axial)",
+      "Acceleration RMS (Radial)",
+      "Acceleration RMS (Tangential)",
+      "Peak to Peak (X)",
+      "Peak to Peak (Y)",
+      "Peak to Peak (Z)",
+  ]

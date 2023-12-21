@@ -1,0 +1,50 @@
+artifacts:
+  model_dir: "/home/abb/anomaly-predictor/models/detection"
+  model_name: "LSTMAE"        # a .pt extension will be appended in the pipeline
+  encoder_name: "encoder"     # a .joblib extension will be appended in the pipeline
+  scaler_name: "RobustScaler" # a .joblib extension will be appended in the pipeline
+
+
+data_prep:
+  pipeline:
+    input_dir: "/home/abb/anomaly-predictor/data/input"
+    interim_dir: "/home/abb/anomaly-predictor/data/interim"
+    processed_dir: "/home/abb/anomaly-predictor/data/processed"
+
+  ingest_data:
+    assets_dir: "assets"
+    annotation_list: []       # Please leave this empty
+    time_col: "MEASUREMENT_TAKEN_ON(UTC)"
+    cut_off_date: "01-7-21"
+    asset_timezone: 0
+    annotation_timezone: 0
+
+  clean_data:       # Please leave this empty
+  feature_engineering:       # Please leave this empty
+
+
+modeling:
+  inference_pipeline:
+    inference_dir: "/home/abb/anomaly-predictor/data/input"
+    prediction_dir: "/home/abb/anomaly-predictor/data/predictions"
+    create_visualizations: False
+
+  data_loader:
+    init:
+      batch_size: 336
+      pin_memory: False
+      num_workers: 0
+
+  visualizations:
+    time_col: "PREDICTED_ANOMALY_TIME(UTC)"
+    plotting_features: ["Motor Supply Frequency",
+      "Vibration (Axial)",
+      "Vibration (Radial)",
+      "Vibration (Tangential)",
+      "Acceleration RMS (Axial)",
+      "Acceleration RMS (Radial)",
+      "Acceleration RMS (Tangential)",
+      "Peak to Peak (X)",
+      "Peak to Peak (Y)",
+      "Peak to Peak (Z)",
+  ]

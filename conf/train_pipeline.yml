@@ -1,0 +1,225 @@
+defaults:
+  - override hydra/sweeper: "optuna"
+  - override hydra/sweeper/sampler: "tpe"
+
+hydra:
+  sweeper:
+    sampler:
+      seed: 123
+    direction: ["minimize", "maximize","maximize"]
+    study_name: "lstm-big-sweep" # e.g., "anomaly-detection" or "anomaly-forecast"
+    storage: null
+    n_trials: 10
+    n_jobs: 1
+
+    search_space:  #change hyperparameters below according.
+      data_prep.clean_data.outlier_threshold:
+        type: "float"
+        low: 1.5
+        high: 3.5
+        step: 0.5
+  
+      modeling.data_loader.init.batch_size:
+        type: "int"
+        low: 128
+        high: 512
+        step: 128
+
+data_prep:
+  pipeline:
+    input_dir: "/polyaxon-v1-data/data/input"
+    interim_dir: "/polyaxon-v1-data/data/interim"
+    processed_dir: "/polyaxon-v1-data/workspaces/pychow/data/processed"
+    conf_dir: "/polyaxon-v1-data/workspaces/pychow/anomaly-predictor/conf"
+    # input_dir: "/home/abb/data/input"         # use this if docker 
+    # interim_dir: "/home/abb/data/interim"     # use this if docker 
+    # processed_dir: "/home/abb/data/processed" # use this if docker 
+    # conf_dir: "/home/abb/conf"                # use this if docker 
+
+  ingest_data:
+    assets_dir: "assets"
+    annotation_list: [
+        "annotations/annotations_20211214.xlsx",
+        "annotations/annotations_20220124.xlsx",
+        "annotations/annotations_20220209.xlsx",
+        "annotations/annotations_20220217.xlsx",
+        "annotations/annotations_20220303.xlsx",
+        "annotations/annotations_20220314.xlsx",
+        "annotations/annotations_20220317.xlsx",
+    ]
+    time_col: "MEASUREMENT_TAKEN_ON(UTC)"
+    cut_off_date: "01-7-21"
+    asset_timezone: 0
+    annotation_timezone: 8
+
+  split_data:
+    by: "asset"     # expects values "asset" or "time"
+    test_size: 0.2
+    random_state: 42
+    # follow_split: ""
+    follow_split: "/polyaxon-v1-data/data/processed/20220520_095038/split_data.json"
+
+  clean_data:
+    features_to_standardize: [
+        "Output Power",
+        "Overall Vibration",
+        "Peak to Peak (X)",
+        "Peak to Peak (Y)",
+        "Peak to Peak (Z)",
+        "Skin Temperature",
+        "Speed",
+        "Motor Supply Frequency",
+        "Vibration (Axial)",
+        "Vibration (Radial)",
+        "Vibration (Tangential)",
+        "Acceleration RMS (Axial)",
+        "Acceleration RMS (Radial)",
+        "Acceleration RMS (Tangential)",
+        "Bearing Condition"
+    ]
+    standardization_method: "RobustScaler"
+    outlier_threshold: 99999
+    outlier_window: 5
+    nan_range_threshold: 48
+    impute_nan_window: 48
+    impute_nan_period: 1
+    impute_nan_center: True
+    bearing_cond_fill: -1
+    convert_to_int: ["Bearing Condition", "Anomaly"]
+    scaler_args:
+      with_centering: True,      
+      with_scaling: True,
+      copy: True,
+      quantile_range: [25.0, 75.0]
+      unit_variance: False,
+  feature_engineering:
+    min_data_points: 24
+    motor_supply_freq: "Motor Supply Frequency"
+    
+  inference_encoder:
+    enc_name: "encoder"
+
+modeling:
+  train_pipeline:
+    setup_mlflow: False
+    mlflow_autolog: False # Needs to be false when running multirun
+    mlflow_tracking_uri: "http://10.51.252.217:5005" # "http://localhost:5005" if running locally, "http://10.51.252.217:5005" for polyaxon
+    mlflow_exp_name: "lstm-test"
+    mlflow_artifact_location: "gs://anomaly-predictor-artifacts/mlflow-tracking-server"
+    processed_dir: "/polyaxon-v1-data/data/processed/20220520_095038"
+    model_name: "LSTMAE"
+    model_dir: "/polyaxon-v1-data/workspaces/pychow/models"
+    conf_dir: "/polyaxon-v1-data/workspaces/pychow/anomaly-predictor/conf"
+    # directories in docker:
+    # model_dir: "/home/abb/models"       # use this if docker 
+    # conf_dir: "/home/abb/conf"          # use this if docker 
+
+  mlflow_tags:
+    hptuning_tag: "LSTM Detection model with big sweep params"
+    estimator_name: "LSTMAE"
+    estimator_class: "torch.LSTMAE"
+
+  col_names:
+    label_column: "Anomaly"
+    time_col: "MEASUREMENT_TAKEN_ON(UTC)"
+
+  use_individual_scaler: True
+
+  data_loader:
+    init:
+      lookback_period: 336
+      lookahead_period: 0
+      batch_size: 336
+      pin_memory: True
+      num_workers: 3
+      statistical_window: 0
+      remove_non_operating: False
+    feature_to_standardize: [
+      "Output Power",
+      "Overall Vibration",
+      "Peak to Peak (X)",
+      "Peak to Peak (Y)",
+      "Peak to Peak (Z)",
+      "Skin Temperature",
+      "Speed",
+      "Motor Supply Frequency",
+      "Vibration (Axial)",
+      "Vibration (Radial)",
+      "Vibration (Tangential)",
+      "Acceleration RMS (Axial)",
+      "Acceleration RMS (Radial)",
+      "Acceleration RMS (Tangential)",
+      "Bearing Condition"
+    ]
+    shuffle: False
+    robust_scaler:
+      with_centering: True,
+      with_scaling: True,
+      copy: True,
+      quantile_range: [25.0, 75.0]
+      unit_variance: False
+
+  isolation_forest:
+    max_features: 1
+    max_samples: "auto"
+    n_estimators: 2
+    random_state: 42
+
+  lstmae:
+    model_params:
+      hidden_size: [[128, 64, 16, 8], [8, 16, 64, 128]]
+      n_layers: [4, 4]
+      dropout: 0
+    lr: 0.001
+    reconstruction_error_mode: "last_timepoint"
+    pred_threshold: 0.5
+    max_reconstruction_error: 10
+    early_stopping_params:
+      patience: 70
+      min_delta: 0
+      path: "checkpoint.pt"
+
+  lstmae_training:
+    n_epochs: 5
+
+  pred_threshold_search:
+    max_fpr: 0.2
+    terminating_recall: 0.4
+    default_pred_threshold: 0.5
+
+  evaluation:
+    to_run: True
+    columns: ["Asset_Name","Pointwise_Recall","Pointwise_F1_Score","Pointwise_FPR", "Overlap_Recall","Overlap_F1_Score","Overlap_FPR"]
+    create_visualization: True
+    create_encoder_output_tsne: False
+    plotting_features: ["Motor Supply Frequency",
+      "Vibration (Axial)",
+      "Vibration (Radial)",
+      "Vibration (Tangential)",
+      "Acceleration RMS (Axial)",
+      "Acceleration RMS (Radial)",
+      "Acceleration RMS (Tangential)",
+      "Peak to Peak (X)",
+      "Peak to Peak (Y)",
+      "Peak to Peak (Z)",
+    ]
+
+  visualization_args: 
+    Pointwise_F1_Score:
+      top_n_assets: 5
+      bottom_n_assets: 5
+    Pointwise_Recall:
+      top_n_assets: 5
+      bottom_n_assets: 5
+    Pointwise_FPR:
+      top_n_assets: 5
+      bottom_n_assets: 5
+    Overlap_F1_Score:
+      top_n_assets: 5
+      bottom_n_assets: 5
+    Overlap_Recall:
+      top_n_assets: 5
+      bottom_n_assets: 5
+    Overlap_FPR:
+      top_n_assets: 5
+      bottom_n_assets: 5

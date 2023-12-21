@@ -1,0 +1,22 @@
+{
+  "template": "https://github.com/aimakerspace/ml-project-cookiecutter-gcp.git",
+  "commit": "c0eff0378ea5d76c578220fc90fcf5d22c39d8b9",
+  "context": {
+    "cookiecutter": {
+      "project_name": "anomaly predictor",
+      "description": "Anomaly predictor for 100E project with ABB",
+      "repo_name": "anomaly-predictor",
+      "src_package_name": "anomaly_predictor",
+      "src_package_name_short": "anomaly_predictor",
+      "gcp_project_id": "abbpl-aut0",
+      "author_name": "AISG",
+      "open_source_license": "No license file",
+      "_copy_without_render": [
+        "aisg-context/polyaxon/polyaxonfiles"
+      ],
+      "_template": "https://github.com/aimakerspace/ml-project-cookiecutter-gcp.git"
+    }
+  },
+  "directory": null,
+  "checkout": null
+}

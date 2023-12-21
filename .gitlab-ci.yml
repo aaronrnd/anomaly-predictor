@@ -1,0 +1,240 @@
+default:
+  tags:
+    - dind
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  INFERENCE_PKG: "inference_container"
+  RETRAIN_PKG: "retraining_container"
+
+cache:
+  paths:
+    - .cache/pip
+
+stages:
+  - test
+  - build
+  - package
+  - retag
+  - deploy-docs
+
+pylint-pytest:
+  stage: test
+  image:
+    name: continuumio/miniconda:4.7.12
+  before_script:
+    - conda env create -f anomaly-predictor-conda-env.yml
+    - source activate anomaly-predictor
+  script:
+    - pylint src --fail-under=7.0 --ignore=tests --disable=W1202
+    - pytest src/tests
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        - src/**/*
+        - conf/**/*
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_COMMIT_TAG
+      when: never
+
+vscode-server-image:
+  stage: build
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  variables:
+    GOOGLE_APPLICATION_CREDENTIALS: /kaniko/gcp-sa.json
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo $GCP_SERVICE_ACCOUNT_KEY > /kaniko/gcp-sa.json
+    - >-
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/docker/anomaly-predictor-poly-vscode.Dockerfile"
+      --destination "asia.gcr.io/abbpl-aut0/vscode-server:${CI_COMMIT_SHORT_SHA}"
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        - docker/anomaly-predictor-poly-vscode.Dockerfile
+        - aisg-context/code-server/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+build-inference-image:
+  stage: build
+  artifacts:
+    untracked: true
+    expire_in: 120 minutes
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  variables:
+    GOOGLE_APPLICATION_CREDENTIALS: /kaniko/gcp-sa.json
+  before_script:
+    - mkdir -p $INFERENCE_PKG
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo $GCP_SERVICE_ACCOUNT_KEY > /kaniko/gcp-sa.json
+    - >-
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/docker/anomaly-predictor-inference.Dockerfile"
+      --destination "asia.gcr.io/abbpl-aut0/inference:${CI_COMMIT_SHORT_SHA}"
+      --tarPath=$INFERENCE_PKG/inference_container.tar
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        - docker/anomaly-predictor-inference.Dockerfile
+        - src/**/*
+        - conf/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+build-retraining-image:
+  stage: build
+  artifacts:
+    untracked: true
+    expire_in: 120 minutes
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  variables:
+    GOOGLE_APPLICATION_CREDENTIALS: /kaniko/gcp-sa.json
+  before_script:
+    - mkdir -p $RETRAIN_PKG
+  script:
+    - mkdir -p /kaniko/.docker
+    - echo $GCP_SERVICE_ACCOUNT_KEY > /kaniko/gcp-sa.json
+    - >-
+      /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/docker/anomaly-predictor-retraining.Dockerfile"
+      --destination "asia.gcr.io/abbpl-aut0/retraining:${CI_COMMIT_SHORT_SHA}"
+      --tarPath=$RETRAIN_PKG/retraining.tar
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        - docker/anomaly-predictor-retraining.Dockerfile
+        - src/**/*
+        - conf/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+inference-package:
+  stage: package
+  dependencies:
+    - build-inference-image
+  image:
+    name: google/cloud-sdk:debian_component_based
+  variables:
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp-sa.json
+  before_script:
+    - apt-get install -y zip libffi-dev
+    - pip3 install --upgrade pip
+    - pip install pyopenssl
+    - cd $INFERENCE_PKG
+    - mkdir -p conf assets
+    - cd ..
+  script:
+    - echo $GCP_SERVICE_ACCOUNT_KEY > /gcp-sa.json
+    - gcloud auth activate-service-account --key-file=/gcp-sa.json
+    # Copy artifacts into package directory
+    - cp $CI_PROJECT_DIR/conf/docker/inference_pipeline.yml $INFERENCE_PKG/conf/inference_pipeline.yml
+    - cp $CI_PROJECT_DIR/README_INFERENCE.md $INFERENCE_PKG/README.md
+    - gsutil -m cp -r gs://anomaly-predictor-artifacts/initial_deployment/models $INFERENCE_PKG
+    - gsutil -m cp -r gs://anomaly-predictor-artifacts/initial_deployment/data $INFERENCE_PKG
+    - gsutil -m cp -r gs://anomaly-predictor-artifacts/initial_deployment/images $INFERENCE_PKG/assets
+    # Zip package, upload to GCS and generate signed URL
+    - zip -r $INFERENCE_PKG-$CI_COMMIT_SHORT_SHA.zip $INFERENCE_PKG
+    - gsutil cp $INFERENCE_PKG-$CI_COMMIT_SHORT_SHA.zip gs://abbpl-fileshare/inference_container
+    - gsutil signurl -d 7d /gcp-sa.json gs://abbpl-fileshare/inference_container/$INFERENCE_PKG-$CI_COMMIT_SHORT_SHA.zip
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        - docker/anomaly-predictor-inference.Dockerfile
+        - src/**/*
+        - conf/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+retraining-package:
+  stage: package
+  dependencies:
+    - build-retraining-image
+  image:
+    name: google/cloud-sdk:debian_component_based
+  variables:
+      GOOGLE_APPLICATION_CREDENTIALS: /gcp-sa.json
+  before_script:
+    - apt-get install -y zip libffi-dev
+    - pip3 install --upgrade pip
+    - pip install pyopenssl
+    - cd $RETRAIN_PKG
+    - mkdir -p conf models scripts
+    - cd ..
+  script:
+    - echo $GCP_SERVICE_ACCOUNT_KEY > /gcp-sa.json
+    - gcloud auth activate-service-account --key-file=/gcp-sa.json
+    # Copy artifacts into package directory
+    - cp $CI_PROJECT_DIR/conf/docker/train_pipeline.yml $RETRAIN_PKG/conf/train_pipeline.yml
+    - cp $CI_PROJECT_DIR/scripts/retraining_multirun.sh $RETRAIN_PKG/scripts/retraining.sh
+    - cp $CI_PROJECT_DIR/README_RETRAIN.md $RETRAIN_PKG/README.md
+    - gsutil -m cp -r gs://anomaly-predictor-artifacts/retraining_deployment/data $RETRAIN_PKG
+    - gsutil -m cp -r gs://anomaly-predictor-artifacts/retraining_deployment/assets $RETRAIN_PKG
+    # Zip package, upload to GCS and generate signed URL
+    - zip -r $RETRAIN_PKG-$CI_COMMIT_SHORT_SHA.zip $RETRAIN_PKG
+    - gsutil cp $RETRAIN_PKG-$CI_COMMIT_SHORT_SHA.zip gs://abbpl-fileshare/retraining_container
+    - gsutil signurl -d 7d /gcp-sa.json gs://abbpl-fileshare/retraining_container/$RETRAIN_PKG-$CI_COMMIT_SHORT_SHA.zip
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+      changes:
+        - docker/anomaly-predictor-retraining.Dockerfile
+        - src/**/*
+        - conf/**/*
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+retag-images:
+  stage: retag
+  image:
+    name: google/cloud-sdk:debian_component_based
+  variables:
+    GOOGLE_APPLICATION_CREDENTIALS: /gcp-sa.json
+  script:
+    - echo $GCP_SERVICE_ACCOUNT_KEY > /gcp-sa.json
+    - gcloud auth activate-service-account --key-file=/gcp-sa.json
+    - gcloud container images add-tag --quiet "asia.gcr.io/abbpl-aut0/vscode-server:${CI_COMMIT_SHORT_SHA}" "asia.gcr.io/abbpl-aut0/vscode-server:${CI_COMMIT_TAG}"
+    - gcloud container images add-tag --quiet "asia.gcr.io/abbpl-aut0/inference:${CI_COMMIT_SHORT_SHA}" "asia.gcr.io/abbpl-aut0/inference:${CI_COMMIT_TAG}"
+    - gcloud container images add-tag --quiet "asia.gcr.io/abbpl-aut0/retraining:${CI_COMMIT_SHORT_SHA}" "asia.gcr.io/abbpl-aut0/retraining:${CI_COMMIT_TAG}"
+  rules:
+    - if: $CI_COMMIT_TAG
+
+retag-packages:
+  stage: retag
+  image:
+    name: google/cloud-sdk:debian_component_based
+  variables:
+    GOOGLE_APPLICATION_CREDENTIALS: /gcp-sa.json
+  before_script:
+    - apt-get install -y zip libffi-dev
+    - pip3 install --upgrade pip
+    - pip install pyopenssl
+  script:
+    - echo $GCP_SERVICE_ACCOUNT_KEY > /gcp-sa.json
+    - gcloud auth activate-service-account --key-file=/gcp-sa.json
+    - gsutil cp gs://abbpl-fileshare/inference_container/$INFERENCE_PKG-$CI_COMMIT_SHORT_SHA.zip gs://abbpl-fileshare/inference_container/$INFERENCE_PKG-$CI_COMMIT_TAG.zip
+    - gsutil signurl -d 7d /gcp-sa.json gs://abbpl-fileshare/inference_container/$INFERENCE_PKG-$CI_COMMIT_TAG.zip
+    - gsutil cp gs://abbpl-fileshare/retraining_container/$RETRAIN_PKG-$CI_COMMIT_SHORT_SHA.zip gs://abbpl-fileshare/retraining_container/$RETRAIN_PKG-$CI_COMMIT_TAG.zip
+    - gsutil signurl -d 7d /gcp-sa.json gs://abbpl-fileshare/retraining_container/$RETRAIN_PKG-$CI_COMMIT_TAG.zip
+  rules:
+    - if: $CI_COMMIT_TAG
+
+pages:
+  stage: deploy-docs
+  image:
+    name: continuumio/miniconda:4.7.12
+  before_script:
+    - conda env create -f anomaly-predictor-conda-env.yml
+    - source activate anomaly-predictor
+  script:
+    - sphinx-build -b html docs public
+  artifacts:
+    paths:
+    - public
+  only:
+  - master

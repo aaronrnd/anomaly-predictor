@@ -1,0 +1,36 @@
+name: anomaly-predictor
+channels:
+  - defaults
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.7.11
+  - pip=20.2.2
+  - ipykernel=6.4.1
+  - cudatoolkit=11.3.1
+  - pytorch=1.11.0=py3.7_cuda11.3_cudnn8.2.0_0
+  - pip:
+    - protobuf==3.19.3
+    - pandas==1.1.5
+    - mlflow==1.22.0
+    - pylint==2.7.2
+    - pytest-cov==2.10.1
+    - pyyaml==5.4.1
+    - python-json-logger==2.0.2
+    - polyaxon==1.11.3
+    - google-cloud-storage==1.43.0
+    - hydra-core==1.1.1
+    - hydra-optuna-sweeper==1.1.1
+    - optuna==2.10.0
+    - black==21.12b0
+    - openpyxl==3.0.9
+    - xlrd>=1.0.0
+    - dask==2022.1.0
+    - scikit-learn==1.0.2
+    - joblib==1.1.0
+    - matplotlib==3.5.1
+    - sphinx_rtd_theme==1.0.0
+    - seaborn==0.11.2
+
+
+    
